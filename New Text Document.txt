@@ -1,0 +1,21 @@
+cd /d C:\GLobal_Earth
+npm run dev
+
+http://localhost:3000/admin
+
+http://localhost:3000/store
+
+http://localhost:3000/store/add-product
+
+GlobalEarthSmart
+
+
+
+
+
+"%USERPROFILE%\Downloads\cloudflared-windows-amd64.exe" tunnel --url http://localhost:3000
+
+
+الخطوة التالية
+هنحتاج تثبيت أدوات PostgreSQL 17 على ويندوز، من الموقع الرسمي:
+

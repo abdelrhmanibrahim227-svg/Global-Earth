@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GLOBAL EARTH</string>
+    <string name="title_activity_main">GLOBAL EARTH</string>
+    <string name="package_name">com.globalearth.store</string>
+    <string name="custom_url_scheme">com.globalearth.store</string>
+</resources>

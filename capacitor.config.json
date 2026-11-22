@@ -1,0 +1,9 @@
+{
+  "appId": "com.globalearth.store",
+  "appName": "GLOBAL EARTH",
+  "webDir": "www",
+  "server": {
+    "url": "https://gentle-node-arrow-tremendous.trycloudflare.com",
+    "cleartext": false
+  }
+}
