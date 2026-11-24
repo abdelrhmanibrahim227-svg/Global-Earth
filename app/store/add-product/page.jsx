@@ -7,6 +7,8 @@ import { useEffect, useState } from "react"
 import { toast } from "react-hot-toast"
 
 export default function StoreAddProduct() {
+    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "ج.م"
+
     const [images, setImages] = useState({
         1: null,
         2: null,
@@ -361,7 +363,7 @@ export default function StoreAddProduct() {
 
             <div className="flex gap-5">
                 <label className="flex flex-col gap-2">
-                    Actual Price ($)
+                    Actual Price ({currency})
 
                     <input
                         type="number"
@@ -377,7 +379,7 @@ export default function StoreAddProduct() {
                 </label>
 
                 <label className="flex flex-col gap-2">
-                    Offer Price ($)
+                    Offer Price ({currency})
 
                     <input
                         type="number"

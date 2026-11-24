@@ -1,89 +1,163 @@
 'use client'
-import Image from "next/image";
-import { DotIcon } from "lucide-react";
-import { useSelector } from "react-redux";
-import Rating from "./Rating";
-import { useState } from "react";
-import RatingModal from "./RatingModal";
+
+// components/OrderItem.jsx  (still renders table rows, so your orders page table keeps working)
+import { useState } from 'react'
+import { useSelector } from 'react-redux'
+import Rating from './Rating'
+import RatingModal from './RatingModal'
+import ProductImage from './ProductImage'
+import { formatPrice, getImages } from '@/lib/productUtils'
+
+const STATUS_STYLES = {
+    ORDER_PLACED: 'bg-amber-50 text-amber-700 ring-amber-200',
+    CONFIRMED: 'bg-amber-50 text-amber-700 ring-amber-200',
+    PROCESSING: 'bg-amber-50 text-amber-700 ring-amber-200',
+    SHIPPED: 'bg-sky-50 text-sky-700 ring-sky-200',
+    DELIVERED: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    CANCELLED: 'bg-rose-50 text-rose-700 ring-rose-200',
+}
+
+function StatusBadge({ status }) {
+    const key = String(status || '').toUpperCase()
+    const label = String(status || '')
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/^\w/, c => c.toUpperCase())
+
+    return (
+        <span
+            className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-bold ring-1 ${
+                STATUS_STYLES[key] || 'bg-slate-100 text-slate-600 ring-slate-200'
+            }`}
+        >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {label}
+        </span>
+    )
+}
 
 const OrderItem = ({ order }) => {
+    const [ratingModal, setRatingModal] = useState(null)
+    const { ratings } = useSelector(state => state.rating)
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$';
-    const [ratingModal, setRatingModal] = useState(null);
-
-    const { ratings } = useSelector(state => state.rating);
+    const isDelivered = String(order.status).toUpperCase() === 'DELIVERED'
+    const date = new Date(order.createdAt).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    })
 
     return (
         <>
-            <tr className="text-sm">
-                <td className="text-left">
-                    <div className="flex flex-col gap-6">
-                        {order.orderItems.map((item, index) => (
-                            <div key={index} className="flex items-center gap-4">
-                                <div className="w-20 aspect-square bg-slate-100 flex items-center justify-center rounded-md">
-                                    <Image
-                                        className="h-14 w-auto"
-                                        src={item.product.images[0]}
-                                        alt="product_img"
-                                        width={50}
-                                        height={50}
-                                    />
+            <tr className="align-top text-sm">
+                <td className="py-5 text-left">
+                    <div className="flex flex-col gap-5">
+                        {order.orderItems.map((item, index) => {
+                            const existing = ratings?.find(
+                                r =>
+                                    order.id === r.orderId &&
+                                    item.product.id === r.productId
+                            )
+
+                            return (
+                                <div key={index} className="flex items-center gap-4">
+                                    <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-b from-slate-50 to-slate-100">
+                                        <ProductImage
+                                            src={getImages(item.product)[0]}
+                                            alt={item.product.name || 'Product'}
+                                            sizes="80px"
+                                            className="object-contain p-2"
+                                        />
+                                    </div>
+
+                                    <div className="flex min-w-0 flex-col justify-center">
+                                        <p className="line-clamp-2 text-base font-semibold text-slate-800">
+                                            {item.product.name}
+                                        </p>
+                                        <p className="mt-0.5 text-slate-500">
+                                            {formatPrice(item.price)}
+                                            <span className="mx-2 text-slate-300">|</span>
+                                            Qty: {item.quantity}
+                                        </p>
+                                        <p className="mb-1 text-xs text-slate-400">{date}</p>
+
+                                        {existing ? (
+                                            <Rating value={existing.rating} />
+                                        ) : (
+                                            isDelivered && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setRatingModal({
+                                                            orderId: order.id,
+                                                            productId: item.product.id,
+                                                        })
+                                                    }
+                                                    className="w-fit rounded-full border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                                                >
+                                                    Rate product
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex flex-col justify-center text-sm">
-                                    <p className="font-medium text-slate-600 text-base">{item.product.name}</p>
-                                    <p>{currency}{item.price} Qty : {item.quantity} </p>
-                                    <p className="mb-1">{new Date(order.createdAt).toDateString()}</p>
-                                    <div>
-                                        {ratings.find(rating => order.id === rating.orderId && item.product.id === rating.productId)
-                                            ? <Rating value={ratings.find(rating => order.id === rating.orderId && item.product.id === rating.productId).rating} />
-                                            : <button onClick={() => setRatingModal({ orderId: order.id, productId: item.product.id })} className={`text-green-500 hover:bg-green-50 transition ${order.status !== "DELIVERED" && 'hidden'}`}>Rate Product</button>
-                                        }</div>
-                                    {ratingModal && <RatingModal ratingModal={ratingModal} setRatingModal={setRatingModal} />}
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
+
+                        {ratingModal && (
+                            <RatingModal
+                                ratingModal={ratingModal}
+                                setRatingModal={setRatingModal}
+                            />
+                        )}
                     </div>
                 </td>
 
-                <td className="text-center max-md:hidden">{currency}{order.total}</td>
-
-                <td className="text-left max-md:hidden">
-                    <p>{order.address.name}, {order.address.street},</p>
-                    <p>{order.address.city}, {order.address.state}, {order.address.zip}, {order.address.country},</p>
-                    <p>{order.address.phone}</p>
+                <td className="py-5 text-center font-extrabold text-slate-900 max-md:hidden">
+                    {formatPrice(order.total)}
                 </td>
 
-                <td className="text-left space-y-2 text-sm max-md:hidden">
-                    <div
-                        className={`flex items-center justify-center gap-1 rounded-full p-1 ${order.status === 'confirmed'
-                            ? 'text-yellow-500 bg-yellow-100'
-                            : order.status === 'delivered'
-                                ? 'text-green-500 bg-green-100'
-                                : 'text-slate-500 bg-slate-100'
-                            }`}
-                    >
-                        <DotIcon size={10} className="scale-250" />
-                        {order.status.split('_').join(' ').toLowerCase()}
-                    </div>
+                <td className="py-5 text-left leading-6 text-slate-600 max-md:hidden">
+                    <p className="font-semibold text-slate-800">{order.address.name}</p>
+                    <p>{order.address.street}</p>
+                    <p>
+                        {order.address.city}, {order.address.state}
+                        {order.address.zip ? `, ${order.address.zip}` : ''}
+                    </p>
+                    <p dir="ltr" className="text-left text-slate-500">
+                        {order.address.phone}
+                    </p>
+                </td>
+
+                <td className="py-5 text-center max-md:hidden">
+                    <StatusBadge status={order.status} />
                 </td>
             </tr>
-            {/* Mobile */}
+
+            {/* Mobile summary */}
             <tr className="md:hidden">
-                <td colSpan={5}>
-                    <p>{order.address.name}, {order.address.street}</p>
-                    <p>{order.address.city}, {order.address.state}, {order.address.zip}, {order.address.country}</p>
-                    <p>{order.address.phone}</p>
-                    <br />
-                    <div className="flex items-center">
-                        <span className='text-center mx-auto px-6 py-1.5 rounded bg-green-100 text-green-700' >
-                            {order.status.replace(/_/g, ' ').toLowerCase()}
-                        </span>
+                <td colSpan={5} className="pb-5">
+                    <div className="space-y-1 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                        <p className="font-semibold text-slate-800">{order.address.name}</p>
+                        <p>
+                            {order.address.street}, {order.address.city}, {order.address.state}
+                        </p>
+                        <p dir="ltr" className="text-left">
+                            {order.address.phone}
+                        </p>
+                        <div className="flex items-center justify-between pt-3">
+                            <StatusBadge status={order.status} />
+                            <span className="text-base font-extrabold text-slate-900">
+                                {formatPrice(order.total)}
+                            </span>
+                        </div>
                     </div>
                 </td>
             </tr>
+
             <tr>
                 <td colSpan={4}>
-                    <div className="border-b border-slate-300 w-6/7 mx-auto" />
+                    <div className="mx-auto h-px w-full bg-slate-200" />
                 </td>
             </tr>
         </>

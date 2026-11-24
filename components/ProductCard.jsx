@@ -1,101 +1,117 @@
-
-'use client'
-
-import { StarIcon } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
-import React from 'react'
+import { ArrowUpRight, Star } from 'lucide-react'
+import ProductImage from './ProductImage'
+import {
+    formatPrice,
+    getCategoryLabel,
+    getDiscount,
+    getImages,
+    getRating,
+    isInStock,
+    isNew,
+} from '@/lib/productUtils'
 
 const ProductCard = ({ product }) => {
-    const currency = 'ج.م'
+    console.log("CURRENCY TEST:", {
+    env: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL,
+    formattedPrice: formatPrice(product?.price),
+})
+    if (!product) return null
 
-    const ratings = Array.isArray(product?.rating)
-        ? product.rating
-        : []
-
-    const validRatings = ratings.filter(
-        item => Number.isFinite(Number(item?.rating))
-    )
-
-    const averageRating = validRatings.length > 0
-        ? validRatings.reduce(
-            (total, item) => total + Number(item.rating),
-            0
-        ) / validRatings.length
-        : 0
-
-    const rating = Math.round(averageRating)
-
-    let images = []
-
-    if (Array.isArray(product?.images)) {
-        images = product.images
-    } else if (typeof product?.images === 'string') {
-        try {
-            const parsed = JSON.parse(product.images)
-            images = Array.isArray(parsed) ? parsed : [product.images]
-        } catch {
-            images = [product.images]
-        }
-    }
-
-    const imageUrl = images.find(
-        url => typeof url === 'string' && url.trim().length > 0
-    )
-
-    const formattedPrice = Number(product?.price || 0).toLocaleString(
-        'en-EG',
-        {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }
-    )
+    const images = getImages(product)
+    const discount = getDiscount(product)
+    const { average, count } = getRating(product)
+    const inStock = isInStock(product)
+    const category = getCategoryLabel(product)
 
     return (
         <Link
-            href={`/product/${product?.id}`}
-            className="group mx-auto flex w-full max-w-[280px] flex-col"
+            href={`/product/${product.id}`}
+            className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white transition duration-300 hover:-translate-y-1.5 hover:border-cyan-300 hover:shadow-2xl hover:shadow-cyan-900/10"
         >
-            <div className="flex h-44 w-full items-center justify-center overflow-hidden rounded-lg bg-[#F5F7FA] p-3 sm:h-56">
-                {imageUrl ? (
-                    <Image
-                        src={imageUrl}
-                        width={500}
-                        height={500}
-                        alt={product?.name || 'Product'}
-                        className="!h-auto !w-auto max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
-                        sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 280px"
-                        unoptimized
+            {/* Image */}
+            <div className="relative aspect-square overflow-hidden bg-gradient-to-b from-slate-50 via-white to-slate-100">
+                {/* soft spotlight behind the product */}
+                <div className="pointer-events-none absolute inset-x-8 bottom-6 h-10 rounded-full bg-slate-900/10 blur-xl transition group-hover:bg-cyan-500/20" />
+
+                <ProductImage
+                    src={images[0]}
+                    alt={product.name}
+                    className={`object-contain p-6 transition duration-500 sm:p-8 ${
+                        images[1]
+                            ? 'group-hover:scale-95 group-hover:opacity-0'
+                            : 'group-hover:scale-110'
+                    } ${!inStock ? 'opacity-50 grayscale' : ''}`}
+                />
+
+                {/* second image on hover */}
+                {images[1] && (
+                    <ProductImage
+                        src={images[1]}
+                        alt={`${product.name} - view 2`}
+                        className="object-contain p-6 opacity-0 transition duration-500 group-hover:scale-105 group-hover:opacity-100 sm:p-8"
                     />
-                ) : (
-                    <div className="flex items-center justify-center text-sm text-slate-400">
-                        لا توجد صورة
-                    </div>
+                )}
+
+                {/* Badges */}
+                <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
+                    {discount > 0 && inStock && (
+                        <span className="rounded-full bg-rose-500 px-2.5 py-1 text-[11px] font-bold text-white shadow">
+                            -{discount}%
+                        </span>
+                    )}
+                    {isNew(product) && inStock && (
+                        <span className="rounded-full bg-[#030a12] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-cyan-300 shadow">
+                            New
+                        </span>
+                    )}
+                </div>
+
+                {!inStock && (
+                    <span className="absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white">
+                        Out of stock
+                    </span>
                 )}
             </div>
 
-            <div className="flex flex-1 justify-between gap-3 pt-3 text-sm text-slate-800">
-                <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 font-medium">
-                        {product?.name || 'منتج بدون اسم'}
+            {/* Info */}
+            <div className="flex flex-1 flex-col p-4 sm:p-5">
+                {category && (
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-600">
+                        {category}
                     </p>
+                )}
 
-                    <div className="mt-1 flex" aria-label={`التقييم ${rating} من 5`}>
-                        {Array.from({ length: 5 }).map((_, index) => (
-                            <StarIcon
-                                key={index}
-                                size={14}
-                                className="mt-0.5"
-                                fill={rating >= index + 1 ? '#00C950' : '#D1D5DB'}
-                                stroke="none"
-                            />
-                        ))}
+                <h3 className="mt-1.5 line-clamp-2 min-h-[2.6rem] text-sm font-semibold leading-snug text-slate-900 sm:text-[15px]">
+                    {product.name}
+                </h3>
+
+                {count > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                        <Star size={14} className="fill-amber-400 text-amber-400" />
+                        <span className="font-semibold text-slate-700">
+                            {average.toFixed(1)}
+                        </span>
+                        <span>({count})</span>
                     </div>
-                </div>
+                )}
 
-                <p className="shrink-0 font-semibold text-slate-900">
-                    {formattedPrice} {currency}
-                </p>
+                <div className="mt-auto flex items-end justify-between gap-2 pt-4">
+                    <div>
+                        <p className="text-lg font-extrabold text-slate-900 sm:text-xl">
+                            {formatPrice(product.price)}
+                        </p>
+                        {discount > 0 && (
+                            <p className="text-xs text-slate-400 line-through">
+                                {formatPrice(product.mrp)}
+                            </p>
+                        )}
+                    </div>
+
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#030a12] text-cyan-300 transition group-hover:bg-cyan-400 group-hover:text-slate-950">
+                        <ArrowUpRight size={18} />
+                    </span>
+                </div>
             </div>
         </Link>
     )

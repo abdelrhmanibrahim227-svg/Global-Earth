@@ -1,8 +1,14 @@
+// app/api/auth/register/route.js  (replaces your current file)
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
+import {
+    normalizePhone,
+    sendWelcomeEmail,
+    sendWelcomeWhatsApp,
+} from "@/lib/notify";
 
 export const runtime = "nodejs";
 
@@ -13,6 +19,8 @@ export async function POST(request) {
         const name = String(body.name || "").trim();
         const email = String(body.email || "").trim().toLowerCase();
         const password = String(body.password || "");
+        const phone = normalizePhone(body.phone);
+        const whatsappOptIn = body.whatsappOptIn === true && Boolean(phone);
 
         if (!name || !email || !password) {
             return NextResponse.json(
@@ -74,10 +82,24 @@ export async function POST(request) {
 
         await createSession(user.id);
 
+        // Welcome messages: failures are logged and never block registration
+        const [emailResult, whatsappResult] = await Promise.allSettled([
+            sendWelcomeEmail({ name: user.name, email: user.email }),
+            whatsappOptIn
+                ? sendWelcomeWhatsApp({ name: user.name, phone })
+                : Promise.resolve(false),
+        ]);
+
         return NextResponse.json(
             {
                 message: "Account created successfully",
                 user,
+                welcome: {
+                    email: emailResult.status === "fulfilled" && emailResult.value === true,
+                    whatsapp:
+                        whatsappResult.status === "fulfilled" &&
+                        whatsappResult.value === true,
+                },
             },
             { status: 201 }
         );

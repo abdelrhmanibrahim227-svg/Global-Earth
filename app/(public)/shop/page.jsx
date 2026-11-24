@@ -1,20 +1,23 @@
-
 'use client'
 
-import { Suspense, useMemo, useState, useEffect } from 'react'
-import ProductCard from '@/components/ProductCard'
-import {
-    Search,
-    ArrowUpDown,
-    PackageSearch,
-    Layers,
-    RefreshCw
-} from 'lucide-react'
+// Place at: app/shop/page.jsx
+
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useDispatch, useSelector } from 'react-redux'
+import {
+    ArrowUpDown,
+    RefreshCw,
+    Search,
+    SlidersHorizontal,
+    X,
+} from 'lucide-react'
+import ProductCard from '@/components/ProductCard'
 import { setProduct } from '@/lib/features/product/productSlice'
+import { formatPrice, isInStock } from '@/lib/productUtils'
 
-// Extract products from different possible API response formats
+const PAGE_SIZE = 12
+
 function extractProducts(data) {
     if (Array.isArray(data)) return data
 
@@ -25,10 +28,15 @@ function extractProducts(data) {
         data?.results,
         data?.data?.products,
         data?.data?.items,
-        data?.result?.products
+        data?.result?.products,
     ]
 
     return possibleLists.find(Array.isArray) || []
+}
+
+function extractCategories(data) {
+    const lists = [data, data?.categories, data?.data, data?.data?.categories]
+    return lists.find(Array.isArray) || []
 }
 
 function getProductId(product) {
@@ -37,26 +45,40 @@ function getProductId(product) {
 
 function getCategoryId(product) {
     const category = product?.category
-
     return String(
         product?.categoryId ??
-        product?.category_id ??
-        (typeof category === 'object'
-            ? category?.id ?? category?._id
-            : '') ??
-        ''
+            product?.category_id ??
+            (typeof category === 'object' ? category?.id ?? category?._id : '') ??
+            ''
     )
 }
 
 function getCategoryName(product) {
     const category = product?.category
-
     return String(
         typeof category === 'object'
             ? category?.name ?? category?.title ?? ''
             : category ?? ''
     ).toLowerCase()
 }
+
+function matchesCategory(product, category) {
+    const id = String(category?.id ?? category?._id ?? '')
+    const productCategoryId = getCategoryId(product)
+    if (productCategoryId) return productCategoryId === id
+    return getCategoryName(product) === String(category?.name || '').toLowerCase()
+}
+
+const ProductSkeleton = () => (
+    <div className="animate-pulse overflow-hidden rounded-3xl border border-slate-200">
+        <div className="aspect-square bg-slate-100" />
+        <div className="space-y-3 p-5">
+            <div className="h-3 w-1/3 rounded bg-slate-200" />
+            <div className="h-4 w-4/5 rounded bg-slate-200" />
+            <div className="h-5 w-1/2 rounded bg-slate-200" />
+        </div>
+    </div>
+)
 
 function ShopContent() {
     const searchParams = useSearchParams()
@@ -66,19 +88,31 @@ function ShopContent() {
     const search = searchParams.get('search') || ''
 
     const products = useSelector(state => state.product?.list)
-    const productList = Array.isArray(products) ? products : []
+    const productList = useMemo(
+        () => (Array.isArray(products) ? products : []),
+        [products]
+    )
 
+    const [searchInput, setSearchInput] = useState(search)
     const [sortOrder, setSortOrder] = useState('newest')
     const [categories, setCategories] = useState([])
     const [selectedCategory, setSelectedCategory] = useState('all')
+    const [minPrice, setMinPrice] = useState('')
+    const [maxPrice, setMaxPrice] = useState('')
+    const [onlyInStock, setOnlyInStock] = useState(false)
+    const [filtersOpen, setFiltersOpen] = useState(false)
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
     const [categoriesLoading, setCategoriesLoading] = useState(true)
     const [productsLoading, setProductsLoading] = useState(true)
     const [productsError, setProductsError] = useState('')
     const [retryCount, setRetryCount] = useState(0)
 
+    useEffect(() => setSearchInput(search), [search])
+
     // Load products
     useEffect(() => {
-        let cancelled = false
+        const controller = new AbortController()
 
         async function loadProducts() {
             setProductsLoading(true)
@@ -86,370 +120,476 @@ function ShopContent() {
 
             try {
                 const response = await fetch('/api/products', {
-                    method: 'GET',
-                    cache: 'no-store',
-                    credentials: 'include'
+                    credentials: 'include',
+                    signal: controller.signal,
                 })
-
                 const data = await response.json()
 
                 if (!response.ok) {
                     throw new Error(
                         data?.message ||
-                        data?.error ||
-                        `Products API error: ${response.status}`
+                            data?.error ||
+                            `Products API error: ${response.status}`
                     )
                 }
 
-                const loadedProducts = extractProducts(data)
-
-                console.log('GLOBAL EARTH API RESPONSE:', data)
-                console.log(
-                    'GLOBAL EARTH PRODUCTS COUNT:',
-                    loadedProducts.length
-                )
-
-                if (!cancelled) {
-                    dispatch(setProduct(loadedProducts))
-                }
-
-                if (!loadedProducts.length) {
-                    console.warn(
-                        'No products were returned by /api/products'
-                    )
-                }
-
+                dispatch(setProduct(extractProducts(data)))
             } catch (error) {
+                if (error.name === 'AbortError') return
                 console.error('PRODUCTS LOADING ERROR:', error)
-
-                if (!cancelled) {
-                    setProductsError(
-                        error.message || 'Unable to load products'
-                    )
-                }
+                setProductsError(error.message || 'Unable to load products')
             } finally {
-                if (!cancelled) {
-                    setProductsLoading(false)
-                }
+                if (!controller.signal.aborted) setProductsLoading(false)
             }
         }
 
         loadProducts()
-
-        return () => {
-            cancelled = true
-        }
+        return () => controller.abort()
     }, [dispatch, retryCount])
 
     // Load categories
     useEffect(() => {
-        let cancelled = false
+        const controller = new AbortController()
 
         async function loadCategories() {
             try {
                 const response = await fetch('/api/categories', {
-                    cache: 'no-store',
-                    credentials: 'include'
+                    credentials: 'include',
+                    signal: controller.signal,
                 })
-
                 const data = await response.json()
-
-                if (!response.ok) {
-                    throw new Error(
-                        data?.message || 'Failed to load categories'
-                    )
-                }
-
-                const loadedCategories = Array.isArray(data)
-                    ? data
-                    : Array.isArray(data?.categories)
-                        ? data.categories
-                        : Array.isArray(data?.data)
-                            ? data.data
-                            : Array.isArray(data?.data?.categories)
-                                ? data.data.categories
-                                : []
-
-                if (!cancelled) {
-                    setCategories(loadedCategories)
-                }
-
+                if (!response.ok) throw new Error('Failed to load categories')
+                setCategories(extractCategories(data))
             } catch (error) {
-                console.error('CATEGORIES ERROR:', error)
-            } finally {
-                if (!cancelled) {
-                    setCategoriesLoading(false)
+                if (error.name !== 'AbortError') {
+                    console.error('CATEGORIES ERROR:', error)
                 }
+            } finally {
+                if (!controller.signal.aborted) setCategoriesLoading(false)
             }
         }
 
         loadCategories()
-
-        return () => {
-            cancelled = true
-        }
+        return () => controller.abort()
     }, [])
 
-    // Filter and sort products
+    // Reset pagination when filters change
+    useEffect(() => {
+        setVisibleCount(PAGE_SIZE)
+    }, [search, selectedCategory, minPrice, maxPrice, onlyInStock, sortOrder])
+
     const filteredProducts = useMemo(() => {
-        const normalizedSearch = search.trim().toLowerCase()
+        const q = search.trim().toLowerCase()
+        const min = minPrice === '' ? null : Number(minPrice)
+        const max = maxPrice === '' ? null : Number(maxPrice)
 
         const selectedCategoryObject = categories.find(
             item => String(item?.id ?? item?._id) === String(selectedCategory)
         )
 
-        const selectedCategoryName = String(
-            selectedCategoryObject?.name || ''
-        ).toLowerCase()
-
         const result = productList.filter(product => {
-            const name = String(product?.name || '').toLowerCase()
-            const description = String(
-                product?.description || ''
-            ).toLowerCase()
-
-            const categoryName = getCategoryName(product)
-            const productCategoryId = getCategoryId(product)
+            const price = Number(product?.price || 0)
 
             const matchesSearch =
-                !normalizedSearch ||
-                name.includes(normalizedSearch) ||
-                description.includes(normalizedSearch) ||
-                categoryName.includes(normalizedSearch)
+                !q ||
+                String(product?.name || '').toLowerCase().includes(q) ||
+                String(product?.description || '').toLowerCase().includes(q) ||
+                getCategoryName(product).includes(q)
 
-            const matchesCategory =
+            const categoryOk =
                 selectedCategory === 'all' ||
-                productCategoryId === String(selectedCategory) ||
-                (
-                    !productCategoryId &&
-                    categoryName === selectedCategoryName
-                )
+                (selectedCategoryObject &&
+                    matchesCategory(product, selectedCategoryObject))
 
-            return matchesSearch && matchesCategory
+            const priceOk =
+                (min === null || price >= min) && (max === null || price <= max)
+
+            const stockOk = !onlyInStock || isInStock(product)
+
+            return matchesSearch && categoryOk && priceOk && stockOk
         })
 
-        return [...result].sort((a, b) => {
-            if (sortOrder === 'price-low') {
-                return Number(a?.price || 0) - Number(b?.price || 0)
-            }
-
-            if (sortOrder === 'price-high') {
-                return Number(b?.price || 0) - Number(a?.price || 0)
-            }
-
-            if (sortOrder === 'name') {
-                return String(a?.name || '').localeCompare(
-                    String(b?.name || '')
-                )
-            }
-
+        return result.sort((a, b) => {
+            if (sortOrder === 'price-low') return Number(a?.price || 0) - Number(b?.price || 0)
+            if (sortOrder === 'price-high') return Number(b?.price || 0) - Number(a?.price || 0)
+            if (sortOrder === 'name') return String(a?.name || '').localeCompare(String(b?.name || ''))
             return (
                 new Date(b?.createdAt || 0).getTime() -
                 new Date(a?.createdAt || 0).getTime()
             )
         })
-    }, [
-        productList,
-        search,
-        sortOrder,
-        selectedCategory,
-        categories
-    ])
+    }, [productList, search, sortOrder, selectedCategory, categories, minPrice, maxPrice, onlyInStock])
 
-    return (
-        <main className="min-h-[70vh] bg-white px-4 sm:px-6">
-            <div className="mx-auto max-w-7xl py-8 sm:py-12">
+    const categoryCounts = useMemo(() => {
+        const map = {}
+        for (const c of categories) {
+            const id = String(c?.id ?? c?._id ?? '')
+            map[id] = productList.filter(p => matchesCategory(p, c)).length
+        }
+        return map
+    }, [categories, productList])
 
-                {/* Page Heading */}
-                <div className="mb-8 border-b border-slate-100 pb-6">
-                    <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-600">
-                        GLOBAL EARTH
-                    </p>
+    const visibleProducts = filteredProducts.slice(0, visibleCount)
+    const activeCategory = categories.find(
+        c => String(c?.id ?? c?._id) === String(selectedCategory)
+    )
 
-                    <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                        {search ? 'Search Results' : 'Explore Our Products'}
-                    </h1>
+    const hasFilters =
+        selectedCategory !== 'all' ||
+        minPrice !== '' ||
+        maxPrice !== '' ||
+        onlyInStock ||
+        !!search
 
-                    <p className="mt-3 text-sm text-slate-500 sm:text-base">
-                        Discover computers, laptops, smartphones, cameras,
-                        printers and more.
-                    </p>
-                </div>
+    const resetFilters = () => {
+        setSelectedCategory('all')
+        setMinPrice('')
+        setMaxPrice('')
+        setOnlyInStock(false)
+        if (search) router.push('/shop')
+    }
 
-                {/* Category Filter */}
-                <div className="mb-7">
-                    <div className="mb-3 flex items-center gap-2">
-                        <Layers size={19} className="text-cyan-600" />
+    const submitSearch = e => {
+        e.preventDefault()
+        const value = searchInput.trim()
+        router.push(value ? `/shop?search=${encodeURIComponent(value)}` : '/shop')
+    }
 
-                        <h2 className="text-sm font-semibold text-slate-800">
-                            Shop by Category
-                        </h2>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
+    const FilterPanel = (
+        <div className="space-y-8">
+            {/* Categories */}
+            <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-900">
+                    Categories
+                </h3>
+                <ul className="space-y-1">
+                    <li>
                         <button
                             type="button"
                             onClick={() => setSelectedCategory('all')}
-                            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
                                 selectedCategory === 'all'
-                                    ? 'border-cyan-500 bg-cyan-500 text-white'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-400 hover:text-cyan-600'
+                                    ? 'bg-[#030a12] font-semibold text-cyan-300'
+                                    : 'text-slate-600 hover:bg-slate-100'
                             }`}
                         >
                             All Products
+                            <span className="text-xs opacity-70">{productList.length}</span>
                         </button>
-
-                        {categories.map(category => {
-                            const categoryId = String(
-                                category?.id ?? category?._id ?? ''
-                            )
-
-                            return (
+                    </li>
+                    {categories.map(category => {
+                        const id = String(category?.id ?? category?._id ?? '')
+                        return (
+                            <li key={id}>
                                 <button
-                                    key={categoryId}
                                     type="button"
-                                    onClick={() => setSelectedCategory(categoryId)}
-                                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                                        selectedCategory === categoryId
-                                            ? 'border-cyan-500 bg-cyan-500 text-white'
-                                            : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-400 hover:text-cyan-600'
+                                    onClick={() => setSelectedCategory(id)}
+                                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
+                                        selectedCategory === id
+                                            ? 'bg-[#030a12] font-semibold text-cyan-300'
+                                            : 'text-slate-600 hover:bg-slate-100'
                                     }`}
                                 >
                                     {category.name}
+                                    <span className="text-xs opacity-70">
+                                        {categoryCounts[id] ?? 0}
+                                    </span>
                                 </button>
-                            )
-                        })}
-                    </div>
-
-                    {categoriesLoading && (
-                        <p className="mt-2 text-xs text-slate-400">
-                            Loading categories...
-                        </p>
-                    )}
-                </div>
-
-                {/* Search and Sorting */}
-                <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <PackageSearch
-                            size={19}
-                            className="text-cyan-600"
-                        />
-
-                        <span>
-                            Showing{' '}
-                            <strong className="text-slate-900">
-                                {filteredProducts.length}
-                            </strong>
-                            {' '}of {productList.length} products
-                        </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <ArrowUpDown
-                            size={18}
-                            className="text-cyan-600"
-                        />
-
-                        <label
-                            htmlFor="product-sort"
-                            className="text-sm text-slate-600"
-                        >
-                            Sort by:
-                        </label>
-
-                        <select
-                            id="product-sort"
-                            value={sortOrder}
-                            onChange={event => setSortOrder(event.target.value)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-cyan-500"
-                        >
-                            <option value="newest">Newest</option>
-                            <option value="price-low">Price: Low to High</option>
-                            <option value="price-high">Price: High to Low</option>
-                            <option value="name">Name</option>
-                        </select>
-                    </div>
-                </div>
-
-                {/* Products */}
-                {productsLoading ? (
-                    <div className="mb-20 flex min-h-64 flex-col items-center justify-center text-slate-500">
-                        <RefreshCw
-                            size={32}
-                            className="mb-4 animate-spin text-cyan-500"
-                        />
-
-                        <p>Loading GLOBAL EARTH products...</p>
-                    </div>
-                ) : productsError ? (
-                    <div className="mb-20 rounded-xl border border-red-200 bg-red-50 p-6 text-center">
-                        <p className="font-medium text-red-700">
-                            {productsError}
-                        </p>
-
-                        <button
-                            type="button"
-                            onClick={() => setRetryCount(value => value + 1)}
-                            className="mt-4 rounded-lg bg-slate-900 px-5 py-2 text-sm text-white"
-                        >
-                            Try Again
-                        </button>
-                    </div>
-                ) : filteredProducts.length > 0 ? (
-                    <div className="mb-20 grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-4">
-                        {filteredProducts.map(product => (
-                            <ProductCard
-                                key={getProductId(product)}
-                                product={product}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="mb-20 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 text-center">
-                        <Search
-                            size={40}
-                            className="mb-4 text-slate-300"
-                        />
-
-                        <h2 className="text-lg font-semibold text-slate-800">
-                            No products found
-                        </h2>
-
-                        <p className="mt-2 max-w-md text-sm text-slate-500">
-                            {search
-                                ? `We couldn't find any products matching "${search}". Try another search.`
-                                : 'Products will appear here when they become available.'}
-                        </p>
-
-                        {(search || selectedCategory !== 'all') && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSelectedCategory('all')
-                                    router.push('/shop')
-                                }}
-                                className="mt-5 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-600"
-                            >
-                                View All Products
-                            </button>
-                        )}
-
-                        {!search && selectedCategory === 'all' && (
-                            <button
-                                type="button"
-                                onClick={() => setRetryCount(value => value + 1)}
-                                className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white"
-                            >
-                                Reload Products
-                            </button>
-                        )}
-                    </div>
+                            </li>
+                        )
+                    })}
+                </ul>
+                {categoriesLoading && (
+                    <p className="mt-2 text-xs text-slate-400">Loading categories...</p>
                 )}
             </div>
+
+            {/* Price */}
+            <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-900">
+                    Price Range
+                </h3>
+                <div className="flex items-center gap-2">
+                    <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        placeholder="Min"
+                        value={minPrice}
+                        onChange={e => setMinPrice(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-cyan-500"
+                    />
+                    <span className="text-slate-400">-</span>
+                    <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        placeholder="Max"
+                        value={maxPrice}
+                        onChange={e => setMaxPrice(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-cyan-500"
+                    />
+                </div>
+            </div>
+
+            {/* Availability */}
+            <label className="flex cursor-pointer items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                In stock only
+                <input
+                    type="checkbox"
+                    checked={onlyInStock}
+                    onChange={e => setOnlyInStock(e.target.checked)}
+                    className="h-5 w-5 accent-cyan-500"
+                />
+            </label>
+
+            {hasFilters && (
+                <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                    Clear all filters
+                </button>
+            )}
+        </div>
+    )
+
+    return (
+        <main className="min-h-[70vh] bg-white">
+            {/* ===== Header band ===== */}
+            <section className="relative overflow-hidden bg-[#030a12] px-4 py-10 text-white sm:px-6 sm:py-14">
+                <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-cyan-500/25 blur-[100px]" />
+                <div className="pointer-events-none absolute -bottom-32 right-10 h-72 w-72 rounded-full bg-sky-600/20 blur-[100px]" />
+
+                <div className="relative mx-auto max-w-7xl">
+                    <p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-300">
+                        GLOBAL EARTH
+                    </p>
+                    <h1 className="mt-3 text-3xl font-extrabold sm:text-5xl">
+                        {search ? `Results for "${search}"` : 'Explore Our Products'}
+                    </h1>
+                    <p className="mt-3 max-w-2xl text-sm text-slate-300 sm:text-base">
+                        Laptops, smartphones, cameras, printers and accessories -
+                        original products at the best prices.
+                    </p>
+
+                    <form
+                        onSubmit={submitSearch}
+                        className="mt-7 flex max-w-2xl items-center gap-2 rounded-full bg-white p-1.5 shadow-xl shadow-cyan-950/40"
+                    >
+                        <Search size={20} className="ml-4 shrink-0 text-slate-400" />
+                        <input
+                            type="search"
+                            value={searchInput}
+                            onChange={e => setSearchInput(e.target.value)}
+                            placeholder="Search for products, brands and categories"
+                            className="min-w-0 flex-1 bg-transparent px-2 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                        />
+                        <button
+                            type="submit"
+                            className="rounded-full bg-cyan-400 px-6 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
+                        >
+                            Search
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+                <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
+                    {/* Desktop filters */}
+                    <aside className="hidden lg:block">
+                        <div className="sticky top-24 rounded-3xl border border-slate-200 p-5">
+                            {FilterPanel}
+                        </div>
+                    </aside>
+
+                    <div>
+                        {/* Toolbar */}
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm text-slate-500">
+                                <strong className="text-slate-900">
+                                    {filteredProducts.length}
+                                </strong>{' '}
+                                of {productList.length} products
+                            </p>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setFiltersOpen(true)}
+                                    className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 lg:hidden"
+                                >
+                                    <SlidersHorizontal size={16} />
+                                    Filters
+                                </button>
+
+                                <div className="flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2">
+                                    <ArrowUpDown size={16} className="text-cyan-600" />
+                                    <label htmlFor="product-sort" className="sr-only">
+                                        Sort by
+                                    </label>
+                                    <select
+                                        id="product-sort"
+                                        value={sortOrder}
+                                        onChange={e => setSortOrder(e.target.value)}
+                                        className="bg-transparent text-sm font-medium text-slate-700 outline-none"
+                                    >
+                                        <option value="newest">Newest</option>
+                                        <option value="price-low">Price: Low to High</option>
+                                        <option value="price-high">Price: High to Low</option>
+                                        <option value="name">Name (A-Z)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Active chips */}
+                        {hasFilters && (
+                            <div className="mb-5 flex flex-wrap gap-2">
+                                {activeCategory && (
+                                    <Chip onClear={() => setSelectedCategory('all')}>
+                                        {activeCategory.name}
+                                    </Chip>
+                                )}
+                                {minPrice !== '' && (
+                                    <Chip onClear={() => setMinPrice('')}>
+                                        From {formatPrice(minPrice)}
+                                    </Chip>
+                                )}
+                                {maxPrice !== '' && (
+                                    <Chip onClear={() => setMaxPrice('')}>
+                                        Up to {formatPrice(maxPrice)}
+                                    </Chip>
+                                )}
+                                {onlyInStock && (
+                                    <Chip onClear={() => setOnlyInStock(false)}>In stock</Chip>
+                                )}
+                                {search && (
+                                    <Chip onClear={() => router.push('/shop')}>
+                                        &quot;{search}&quot;
+                                    </Chip>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Products */}
+                        {productsLoading ? (
+                            <div className="grid grid-cols-2 gap-4 sm:gap-6 xl:grid-cols-3">
+                                {Array.from({ length: 6 }).map((_, i) => (
+                                    <ProductSkeleton key={i} />
+                                ))}
+                            </div>
+                        ) : productsError ? (
+                            <div className="mb-20 rounded-3xl border border-red-200 bg-red-50 p-8 text-center">
+                                <p className="font-medium text-red-700">{productsError}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setRetryCount(v => v + 1)}
+                                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm text-white"
+                                >
+                                    <RefreshCw size={15} />
+                                    Try Again
+                                </button>
+                            </div>
+                        ) : filteredProducts.length > 0 ? (
+                            <>
+                                <div className="grid grid-cols-2 gap-4 sm:gap-6 xl:grid-cols-3">
+                                    {visibleProducts.map(product => (
+                                        <ProductCard
+                                            key={getProductId(product)}
+                                            product={product}
+                                        />
+                                    ))}
+                                </div>
+
+                                {visibleCount < filteredProducts.length && (
+                                    <div className="mt-10 text-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
+                                            className="rounded-full bg-[#030a12] px-10 py-3.5 text-sm font-bold text-white transition hover:bg-slate-800"
+                                        >
+                                            Show more (
+                                            {filteredProducts.length - visibleCount} left)
+                                        </button>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="flex min-h-72 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center">
+                                <Search size={40} className="mb-4 text-slate-300" />
+                                <h2 className="text-lg font-semibold text-slate-800">
+                                    No products found
+                                </h2>
+                                <p className="mt-2 max-w-md text-sm text-slate-500">
+                                    {hasFilters
+                                        ? 'Try changing or clearing your filters.'
+                                        : 'Products will appear here when they become available.'}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={hasFilters ? resetFilters : () => setRetryCount(v => v + 1)}
+                                    className="mt-5 rounded-full bg-cyan-400 px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
+                                >
+                                    {hasFilters ? 'Clear filters' : 'Reload products'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Mobile filter drawer */}
+            {filtersOpen && (
+                <div className="fixed inset-0 z-50 lg:hidden">
+                    <div
+                        className="absolute inset-0 bg-black/50"
+                        onClick={() => setFiltersOpen(false)}
+                    />
+                    <div className="absolute inset-y-0 left-0 flex w-[85%] max-w-sm flex-col bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-200 p-4">
+                            <h2 className="font-bold text-slate-900">Filters</h2>
+                            <button
+                                type="button"
+                                aria-label="Close filters"
+                                onClick={() => setFiltersOpen(false)}
+                                className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4">{FilterPanel}</div>
+                        <div className="border-t border-slate-200 p-4">
+                            <button
+                                type="button"
+                                onClick={() => setFiltersOpen(false)}
+                                className="w-full rounded-full bg-cyan-400 py-3 text-sm font-bold text-slate-950"
+                            >
+                                Show {filteredProducts.length} products
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     )
 }
+
+const Chip = ({ children, onClear }) => (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800">
+        {children}
+        <button
+            type="button"
+            onClick={onClear}
+            aria-label="Remove filter"
+            className="rounded-full hover:bg-cyan-200"
+        >
+            <X size={14} />
+        </button>
+    </span>
+)
 
 export default function Shop() {
     return (

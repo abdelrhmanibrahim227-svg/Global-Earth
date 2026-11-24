@@ -1,23 +1,44 @@
-
 'use client'
 
-import { useState } from 'react'
+// app/login/page.jsx
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { Mail, Lock, ArrowRight } from 'lucide-react'
+import { ArrowRight, Loader2, Mail } from 'lucide-react'
+import AuthShell from '@/components/AuthShell'
+import SocialButtons from '@/components/SocialButtons'
+import { PasswordInput, TextField } from '@/components/AuthFields'
+import { safeNext } from '@/lib/safeNext'
 
-export default function LoginPage() {
+const OAUTH_ERRORS = {
+    provider_not_configured: 'This sign-in method is not available yet.',
+    state_mismatch: 'Your sign-in session expired. Please try again.',
+    access_denied: 'Sign-in was cancelled.',
+    no_email: 'We could not get an email address from that account.',
+    email_not_verified: 'Your email address is not verified with that provider.',
+    oauth_failed: 'Sign-in failed. Please try again.',
+}
+
+function LoginForm() {
     const router = useRouter()
-    const [loading, setLoading] = useState(false)
-    const [form, setForm] = useState({
-        email: '',
-        password: '',
-    })
+    const searchParams = useSearchParams()
+    const next = safeNext(searchParams.get('next'))
 
-    const handleSubmit = async (e) => {
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const [form, setForm] = useState({ email: '', password: '' })
+
+    // Errors coming back from Google / Facebook
+    useEffect(() => {
+        const code = searchParams.get('error')
+        if (code) toast.error(OAUTH_ERRORS[code] || OAUTH_ERRORS.oauth_failed)
+    }, [searchParams])
+
+    const handleSubmit = async e => {
         e.preventDefault()
         setLoading(true)
+        setError('')
 
         try {
             const response = await fetch('/api/auth/login', {
@@ -25,86 +46,98 @@ export default function LoginPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form),
             })
-
             const result = await response.json()
 
-            if (!response.ok) {
-                throw new Error(result.message || 'Login failed')
-            }
+            if (!response.ok) throw new Error(result.message || 'Login failed')
 
             toast.success('Welcome back!')
-            router.push('/')
+            router.push(next)
             router.refresh()
-        } catch (error) {
-            toast.error(error.message)
+        } catch (err) {
+            setError(err.message)
+            toast.error(err.message)
         } finally {
             setLoading(false)
         }
     }
 
     return (
-        <main className="min-h-[80vh] flex items-center justify-center bg-slate-50 px-4 py-12">
-            <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8">
-                <Link href="/" className="block text-center text-2xl font-extrabold text-slate-900 mb-8">
-                    GLOBAL <span className="text-cyan-500">EARTH.</span>
-                </Link>
-
-                <h1 className="text-2xl font-bold text-slate-900 text-center">
-                    Welcome Back
-                </h1>
-                <p className="text-slate-500 text-sm text-center mt-2 mb-8">
-                    Login to your GLOBAL EARTH account.
-                </p>
-
-                <form onSubmit={handleSubmit} className="space-y-5">
-                    <div>
-                        <label className="block text-sm font-medium mb-2">Email Address</label>
-                        <div className="flex items-center border rounded-xl px-4">
-                            <Mail size={18} className="text-slate-400" />
-                            <input
-                                required
-                                type="email"
-                                name="email"
-                                value={form.email}
-                                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                                placeholder="name@example.com"
-                                className="w-full p-3 outline-none"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium mb-2">Password</label>
-                        <div className="flex items-center border rounded-xl px-4">
-                            <Lock size={18} className="text-slate-400" />
-                            <input
-                                required
-                                type="password"
-                                name="password"
-                                value={form.password}
-                                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                                placeholder="Your password"
-                                className="w-full p-3 outline-none"
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        disabled={loading}
-                        className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-cyan-600 disabled:opacity-60 text-white py-3 rounded-xl font-semibold transition"
+        <AuthShell
+            title="Welcome back"
+            subtitle="Sign in to track orders, save favorites and check out faster."
+            footer={
+                <>
+                    New to GLOBAL EARTH?{' '}
+                    <Link
+                        href={`/register${next !== '/' ? `?next=${encodeURIComponent(next)}` : ''}`}
+                        className="font-semibold text-cyan-600 hover:underline"
                     >
-                        {loading ? 'Logging in...' : 'Login'}
-                        {!loading && <ArrowRight size={18} />}
-                    </button>
-                </form>
-
-                <p className="text-center text-sm text-slate-500 mt-6">
-                    Don't have an account?{' '}
-                    <Link href="/register" className="text-cyan-600 font-semibold hover:underline">
-                        Create Account
+                        Create an account
                     </Link>
-                </p>
-            </div>
-        </main>
+                </>
+            }
+        >
+            <SocialButtons next={next} verb="Continue" />
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+                <TextField
+                    label="Email address"
+                    icon={Mail}
+                    required
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    value={form.email}
+                    onChange={e => setForm({ ...form, email: e.target.value })}
+                    placeholder="name@example.com"
+                />
+
+                <PasswordInput
+                    label="Password"
+                    required
+                    name="password"
+                    autoComplete="current-password"
+                    value={form.password}
+                    onChange={e => setForm({ ...form, password: e.target.value })}
+                    placeholder="Your password"
+                />
+
+                {error && (
+                    <p
+                        role="alert"
+                        className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
+                    >
+                        {error}
+                    </p>
+                )}
+
+                <button
+                    disabled={loading}
+                    className="group flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-[#030a12] py-3.5 text-sm font-bold text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-800 active:scale-[0.99] disabled:opacity-60"
+                >
+                    {loading ? (
+                        <>
+                            <Loader2 size={18} className="animate-spin" /> Signing in...
+                        </>
+                    ) : (
+                        <>
+                            Sign in
+                            <ArrowRight
+                                size={18}
+                                className="transition-transform group-hover:translate-x-1"
+                            />
+                        </>
+                    )}
+                </button>
+            </form>
+        </AuthShell>
+    )
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<div className="min-h-[80vh]" />}>
+            <LoginForm />
+        </Suspense>
     )
 }

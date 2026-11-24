@@ -1,4 +1,3 @@
-
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
@@ -7,18 +6,39 @@ import ProductCard from './ProductCard'
 
 const DISPLAY_QUANTITY = 8
 
+// Works out a stable category key for a product, whatever shape the API returns
+const getCategoryKey = product => {
+    const category =
+        product.category?.name ||
+        product.category?.title ||
+        product.categoryName ||
+        (typeof product.category === 'string' ? product.category : null) ||
+        product.categoryId ||
+        'uncategorized'
+
+    return String(category).trim().toLowerCase()
+}
+
+const ProductSkeleton = () => (
+    <div className="animate-pulse">
+        <div className="aspect-square rounded-2xl bg-slate-200" />
+        <div className="mt-3 h-4 w-3/4 rounded bg-slate-200" />
+        <div className="mt-2 h-4 w-1/3 rounded bg-slate-200" />
+    </div>
+)
+
 const LatestProducts = () => {
     const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(false)
 
     useEffect(() => {
-        let isMounted = true
+        const controller = new AbortController()
 
         const fetchProducts = async () => {
             try {
                 const response = await fetch('/api/products', {
-                    cache: 'no-store'
+                    signal: controller.signal,
                 })
 
                 if (!response.ok) {
@@ -33,55 +53,35 @@ const LatestProducts = () => {
                         ? data.products
                         : []
 
-                if (isMounted) {
-                    setProducts(productList)
-                    setError(false)
-                }
+                setProducts(productList)
+                setError(false)
             } catch (err) {
+                if (err.name === 'AbortError') return
                 console.error('LATEST PRODUCTS ERROR:', err)
-
-                if (isMounted) {
-                    setProducts([])
-                    setError(true)
-                }
+                setProducts([])
+                setError(true)
             } finally {
-                if (isMounted) {
-                    setLoading(false)
-                }
+                if (!controller.signal.aborted) setLoading(false)
             }
         }
 
         fetchProducts()
 
-        return () => {
-            isMounted = false
-        }
+        return () => controller.abort()
     }, [])
 
     const featuredProducts = useMemo(() => {
         const sorted = [...products].sort(
-            (a, b) =>
-                new Date(b.createdAt || 0) -
-                new Date(a.createdAt || 0)
+            (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
         )
 
         const selected = []
         const usedIds = new Set()
         const usedCategories = new Set()
 
-        // اختيار منتج واحد من كل فئة أولاً
+        // One product per category first, for variety
         for (const product of sorted) {
-            const category =
-                product.category?.name ||
-                product.category?.title ||
-                product.categoryName ||
-                (typeof product.category === 'string'
-                    ? product.category
-                    : null) ||
-                product.categoryId ||
-                'uncategorized'
-
-            const categoryKey = String(category).trim().toLowerCase()
+            const categoryKey = getCategoryKey(product)
 
             if (usedCategories.has(categoryKey)) continue
             if (usedIds.has(product.id)) continue
@@ -93,7 +93,7 @@ const LatestProducts = () => {
             if (selected.length >= DISPLAY_QUANTITY) break
         }
 
-        // استكمال العدد بأحدث المنتجات دون تكرار
+        // Fill the rest with the newest products
         for (const product of sorted) {
             if (selected.length >= DISPLAY_QUANTITY) break
             if (usedIds.has(product.id)) continue
@@ -111,19 +111,22 @@ const LatestProducts = () => {
                 title="Featured Products"
                 description={
                     loading
-                        ? 'Discover our products'
-                        : `Showing ${featuredProducts.length} of ${products.length} products`
+                        ? 'Discover our latest arrivals'
+                        : `Handpicked from ${products.length} products`
                 }
                 href="/shop"
             />
 
             <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
-                {featuredProducts.map((product) => (
-                    <ProductCard
-                        key={product.id}
-                        product={product}
-                    />
-                ))}
+                {loading &&
+                    Array.from({ length: DISPLAY_QUANTITY }).map((_, i) => (
+                        <ProductSkeleton key={i} />
+                    ))}
+
+                {!loading &&
+                    featuredProducts.map(product => (
+                        <ProductCard key={product.id} product={product} />
+                    ))}
             </div>
 
             {!loading && error && (
@@ -135,12 +138,6 @@ const LatestProducts = () => {
             {!loading && !error && featuredProducts.length === 0 && (
                 <div className="py-12 text-center text-slate-500">
                     No products available yet.
-                </div>
-            )}
-
-            {loading && (
-                <div className="py-12 text-center text-slate-500">
-                    Loading products...
                 </div>
             )}
         </section>

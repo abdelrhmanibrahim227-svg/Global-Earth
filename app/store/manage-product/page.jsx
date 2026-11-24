@@ -19,7 +19,7 @@ import {
 } from "lucide-react"
 
 export default function StoreManageProducts() {
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'ج.م'
+    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "ج.م"
 
     const [loading, setLoading] = useState(true)
     const [products, setProducts] = useState([])
@@ -29,26 +29,30 @@ export default function StoreManageProducts() {
     const [updatingIds, setUpdatingIds] = useState([])
     const [deletingIds, setDeletingIds] = useState([])
 
-    const [search, setSearch] = useState('')
-    const [filter, setFilter] = useState('all')
+    const [search, setSearch] = useState("")
+    const [filter, setFilter] = useState("all")
 
     const [editingProduct, setEditingProduct] = useState(null)
     const [saving, setSaving] = useState(false)
 
     const [form, setForm] = useState({
-        name: '',
-        description: '',
-        mrp: '',
-        price: '',
-        categoryId: '',
-        images: ''
+        name: "",
+        description: "",
+        mrp: "",
+        price: "",
+        categoryId: "",
+        images: ""
     })
 
-    const formatMoney = (value) =>
-        `${Number(value || 0).toLocaleString('en-EG', {
+    // Unified currency formatting
+    const formatMoney = (value) => {
+        const amount = Number(value || 0)
+
+        return `${amount.toLocaleString("en-EG", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         })} ${currency}`
+    }
 
     // تحميل بيانات المتجر والمنتجات والتصنيفات
     const fetchProducts = async () => {
@@ -57,9 +61,9 @@ export default function StoreManageProducts() {
 
             const [storeResponse, productsResponse, categoriesResponse] =
                 await Promise.all([
-                    fetch('/api/store', { cache: 'no-store' }),
-                    fetch('/api/products', { cache: 'no-store' }),
-                    fetch('/api/categories', { cache: 'no-store' })
+                    fetch("/api/store", { cache: "no-store" }),
+                    fetch("/api/products", { cache: "no-store" }),
+                    fetch("/api/categories", { cache: "no-store" })
                 ])
 
             const storeData = await storeResponse.json()
@@ -67,20 +71,27 @@ export default function StoreManageProducts() {
             const categoriesData = await categoriesResponse.json()
 
             if (!storeResponse.ok) {
-                throw new Error(storeData.message || storeData.error || 'تعذر تحميل المتجر')
+                throw new Error(
+                    storeData.message || storeData.error || "تعذر تحميل المتجر"
+                )
             }
 
             if (!productsResponse.ok) {
-                throw new Error(productsData.message || productsData.error || 'تعذر تحميل المنتجات')
+                throw new Error(
+                    productsData.message || productsData.error || "تعذر تحميل المنتجات"
+                )
             }
 
             if (!categoriesResponse.ok) {
-                throw new Error(categoriesData.message || categoriesData.error || 'تعذر تحميل التصنيفات')
+                throw new Error(
+                    categoriesData.message || categoriesData.error || "تعذر تحميل التصنيفات"
+                )
             }
 
             if (!storeData.store?.id) {
                 setStore(null)
                 setProducts([])
+                setCategories([])
                 return
             }
 
@@ -92,7 +103,7 @@ export default function StoreManageProducts() {
                 : productsData.products
 
             if (!Array.isArray(allProducts)) {
-                throw new Error('بيانات المنتجات غير صحيحة')
+                throw new Error("بيانات المنتجات غير صحيحة")
             }
 
             setProducts(
@@ -108,8 +119,8 @@ export default function StoreManageProducts() {
             )
 
         } catch (error) {
-            console.error('MANAGE PRODUCTS ERROR:', error)
-            toast.error(error.message || 'حدث خطأ أثناء تحميل البيانات')
+            console.error("MANAGE PRODUCTS ERROR:", error)
+            toast.error(error.message || "حدث خطأ أثناء تحميل البيانات")
         } finally {
             setLoading(false)
         }
@@ -121,7 +132,7 @@ export default function StoreManageProducts() {
 
         if (Array.isArray(product.images)) {
             images = product.images
-        } else if (typeof product.images === 'string') {
+        } else if (typeof product.images === "string") {
             try {
                 const parsed = JSON.parse(product.images)
                 images = Array.isArray(parsed) ? parsed : [product.images]
@@ -131,12 +142,12 @@ export default function StoreManageProducts() {
         }
 
         setForm({
-            name: product.name || '',
-            description: product.description || '',
-            mrp: String(product.mrp ?? ''),
-            price: String(product.price ?? ''),
-            categoryId: product.categoryId || '',
-            images: images.join('\n')
+            name: product.name || "",
+            description: product.description || "",
+            mrp: String(product.mrp ?? ""),
+            price: String(product.price ?? ""),
+            categoryId: product.categoryId || "",
+            images: images.join("\n")
         })
 
         setEditingProduct(product)
@@ -157,7 +168,7 @@ export default function StoreManageProducts() {
         if (!editingProduct || saving) return
 
         if (!form.name.trim()) {
-            toast.error('اكتب اسم المنتج')
+            toast.error("اكتب اسم المنتج")
             return
         }
 
@@ -165,19 +176,19 @@ export default function StoreManageProducts() {
         const price = Number(form.price)
 
         if (
-            form.mrp === '' ||
-            form.price === '' ||
+            form.mrp === "" ||
+            form.price === "" ||
             !Number.isFinite(mrp) ||
             !Number.isFinite(price) ||
             mrp < 0 ||
             price < 0
         ) {
-            toast.error('تأكد من صحة الأسعار')
+            toast.error("تأكد من صحة الأسعار")
             return
         }
 
         const images = form.images
-            .split('\n')
+            .split("\n")
             .map(image => image.trim())
             .filter(Boolean)
 
@@ -187,9 +198,9 @@ export default function StoreManageProducts() {
             const response = await fetch(
                 `/api/products/${encodeURIComponent(editingProduct.id)}`,
                 {
-                    method: 'PATCH',
+                    method: "PATCH",
                     headers: {
-                        'Content-Type': 'application/json'
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         name: form.name.trim(),
@@ -205,7 +216,9 @@ export default function StoreManageProducts() {
             const data = await response.json()
 
             if (!response.ok) {
-                throw new Error(data.message || data.error || 'تعذر تعديل المنتج')
+                throw new Error(
+                    data.message || data.error || "تعذر تعديل المنتج"
+                )
             }
 
             setProducts(current =>
@@ -217,11 +230,11 @@ export default function StoreManageProducts() {
             )
 
             setEditingProduct(null)
-            toast.success('تم تحديث بيانات المنتج والأسعار بنجاح')
+            toast.success("تم تحديث بيانات المنتج والأسعار بنجاح")
 
         } catch (error) {
-            console.error('SAVE PRODUCT ERROR:', error)
-            toast.error(error.message || 'فشل تحديث المنتج')
+            console.error("SAVE PRODUCT ERROR:", error)
+            toast.error(error.message || "فشل تحديث المنتج")
         } finally {
             setSaving(false)
         }
@@ -237,9 +250,9 @@ export default function StoreManageProducts() {
             const response = await fetch(
                 `/api/products/${encodeURIComponent(productId)}`,
                 {
-                    method: 'PATCH',
+                    method: "PATCH",
                     headers: {
-                        'Content-Type': 'application/json'
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({ inStock })
                 }
@@ -248,7 +261,9 @@ export default function StoreManageProducts() {
             const data = await response.json()
 
             if (!response.ok) {
-                throw new Error(data.message || data.error || 'تعذر تحديث حالة المنتج')
+                throw new Error(
+                    data.message || data.error || "تعذر تحديث حالة المنتج"
+                )
             }
 
             setProducts(current =>
@@ -263,12 +278,12 @@ export default function StoreManageProducts() {
             )
 
             toast.success(
-                inStock ? 'المنتج متاح للبيع الآن' : 'تم تسجيل المنتج كنافد'
+                inStock ? "المنتج متاح للبيع الآن" : "تم تسجيل المنتج كنافد"
             )
 
         } catch (error) {
-            console.error('UPDATE STOCK ERROR:', error)
-            toast.error(error.message || 'فشل تحديث الحالة')
+            console.error("UPDATE STOCK ERROR:", error)
+            toast.error(error.message || "فشل تحديث الحالة")
         } finally {
             setUpdatingIds(current =>
                 current.filter(id => id !== productId)
@@ -290,25 +305,27 @@ export default function StoreManageProducts() {
             const response = await fetch(
                 `/api/products/${encodeURIComponent(product.id)}`,
                 {
-                    method: 'DELETE'
+                    method: "DELETE"
                 }
             )
 
             const data = await response.json()
 
             if (!response.ok) {
-                throw new Error(data.message || data.error || 'تعذر حذف المنتج')
+                throw new Error(
+                    data.message || data.error || "تعذر حذف المنتج"
+                )
             }
 
             setProducts(current =>
                 current.filter(item => item.id !== product.id)
             )
 
-            toast.success('تم حذف المنتج بنجاح')
+            toast.success("تم حذف المنتج بنجاح")
 
         } catch (error) {
-            console.error('DELETE PRODUCT ERROR:', error)
-            toast.error(error.message || 'فشل حذف المنتج')
+            console.error("DELETE PRODUCT ERROR:", error)
+            toast.error(error.message || "فشل حذف المنتج")
         } finally {
             setDeletingIds(current =>
                 current.filter(id => id !== product.id)
@@ -320,13 +337,13 @@ export default function StoreManageProducts() {
     const filteredProducts = useMemo(() => {
         return products.filter(product => {
             const matchesSearch =
-                (product.name || '').toLowerCase().includes(search.toLowerCase()) ||
-                (product.category || '').toLowerCase().includes(search.toLowerCase())
+                (product.name || "").toLowerCase().includes(search.toLowerCase()) ||
+                (product.category || "").toLowerCase().includes(search.toLowerCase())
 
             const matchesFilter =
-                filter === 'all' ||
-                (filter === 'available' && product.inStock) ||
-                (filter === 'out' && !product.inStock)
+                filter === "all" ||
+                (filter === "available" && product.inStock) ||
+                (filter === "out" && !product.inStock)
 
             return matchesSearch && matchesFilter
         })
@@ -467,8 +484,8 @@ export default function StoreManageProducts() {
                                 <tr>
                                     <th className="px-4 py-4">المنتج</th>
                                     <th className="px-4 py-4">التصنيف</th>
-                                    <th className="px-4 py-4">السعر الأصلي</th>
-                                    <th className="px-4 py-4">سعر البيع</th>
+                                    <th className="px-4 py-4">السعر الأصلي ({currency})</th>
+                                    <th className="px-4 py-4">سعر البيع ({currency})</th>
                                     <th className="px-4 py-4">حالة التوفر</th>
                                     <th className="px-4 py-4">الإجراءات</th>
                                 </tr>
@@ -476,9 +493,20 @@ export default function StoreManageProducts() {
 
                             <tbody className="text-slate-700">
                                 {filteredProducts.map(product => {
-                                    const images = Array.isArray(product.images)
-                                        ? product.images
-                                        : []
+                                    let images = []
+
+                                    if (Array.isArray(product.images)) {
+                                        images = product.images
+                                    } else if (typeof product.images === "string") {
+                                        try {
+                                            const parsed = JSON.parse(product.images)
+                                            images = Array.isArray(parsed)
+                                                ? parsed
+                                                : [product.images]
+                                        } catch {
+                                            images = [product.images]
+                                        }
+                                    }
 
                                     const imageUrl = images[0]
                                     const updating = updatingIds.includes(product.id)
@@ -498,7 +526,7 @@ export default function StoreManageProducts() {
                                                             unoptimized
                                                             className="w-12 h-12 object-contain rounded-lg border p-1"
                                                             src={imageUrl}
-                                                            alt={product.name || 'Product'}
+                                                            alt={product.name || "Product"}
                                                         />
                                                     ) : (
                                                         <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
@@ -511,14 +539,14 @@ export default function StoreManageProducts() {
                                                             {product.name}
                                                         </p>
                                                         <p className="text-xs text-slate-400 mt-1">
-                                                            {product.description || 'بدون وصف'}
+                                                            {product.description || "بدون وصف"}
                                                         </p>
                                                     </div>
                                                 </div>
                                             </td>
 
                                             <td className="px-4 py-3">
-                                                {product.category || '-'}
+                                                {product.category || "-"}
                                             </td>
 
                                             <td className="px-4 py-3 whitespace-nowrap">
@@ -530,7 +558,7 @@ export default function StoreManageProducts() {
                                             </td>
 
                                             <td className="px-4 py-3">
-                                                <label className={`inline-flex items-center gap-2 ${updating ? 'opacity-50' : 'cursor-pointer'}`}>
+                                                <label className={`inline-flex items-center gap-2 ${updating ? "opacity-50" : "cursor-pointer"}`}>
                                                     <input
                                                         type="checkbox"
                                                         className="sr-only peer"
@@ -546,12 +574,12 @@ export default function StoreManageProducts() {
 
                                                     <span className="w-10 h-5 bg-slate-300 rounded-full relative peer-checked:bg-green-600 after:content-[''] after:absolute after:top-1 after:right-1 after:w-3 after:h-3 after:bg-white after:rounded-full after:transition-transform peer-checked:after:-translate-x-5" />
 
-                                                    <span className={`text-xs font-medium ${product.inStock ? 'text-green-600' : 'text-red-500'}`}>
+                                                    <span className={`text-xs font-medium ${product.inStock ? "text-green-600" : "text-red-500"}`}>
                                                         {updating
-                                                            ? 'جارٍ التحديث'
+                                                            ? "جارٍ التحديث"
                                                             : product.inStock
-                                                                ? 'متاح'
-                                                                : 'نافد / موقوف'}
+                                                                ? "متاح"
+                                                                : "نافد / موقوف"}
                                                     </span>
                                                 </label>
                                             </td>
@@ -574,7 +602,7 @@ export default function StoreManageProducts() {
                                                         className="flex items-center gap-1 bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded-lg disabled:opacity-50"
                                                     >
                                                         <Trash2 size={15} />
-                                                        {deleting ? 'جارٍ الحذف' : 'حذف'}
+                                                        {deleting ? "جارٍ الحذف" : "حذف"}
                                                     </button>
                                                 </div>
                                             </td>
@@ -635,7 +663,7 @@ export default function StoreManageProducts() {
                                 <input
                                     required
                                     value={form.name}
-                                    onChange={event => updateForm('name', event.target.value)}
+                                    onChange={event => updateForm("name", event.target.value)}
                                     className="w-full border rounded-lg p-3 outline-none focus:border-blue-500"
                                 />
                             </div>
@@ -647,7 +675,7 @@ export default function StoreManageProducts() {
                                 <textarea
                                     rows={3}
                                     value={form.description}
-                                    onChange={event => updateForm('description', event.target.value)}
+                                    onChange={event => updateForm("description", event.target.value)}
                                     className="w-full border rounded-lg p-3 outline-none focus:border-blue-500"
                                 />
                             </div>
@@ -663,7 +691,7 @@ export default function StoreManageProducts() {
                                         step="0.01"
                                         required
                                         value={form.mrp}
-                                        onChange={event => updateForm('mrp', event.target.value)}
+                                        onChange={event => updateForm("mrp", event.target.value)}
                                         className="w-full border rounded-lg p-3 outline-none focus:border-blue-500"
                                     />
                                 </div>
@@ -678,7 +706,7 @@ export default function StoreManageProducts() {
                                         step="0.01"
                                         required
                                         value={form.price}
-                                        onChange={event => updateForm('price', event.target.value)}
+                                        onChange={event => updateForm("price", event.target.value)}
                                         className="w-full border rounded-lg p-3 outline-none focus:border-blue-500"
                                     />
                                 </div>
@@ -691,7 +719,7 @@ export default function StoreManageProducts() {
 
                                 <select
                                     value={form.categoryId}
-                                    onChange={event => updateForm('categoryId', event.target.value)}
+                                    onChange={event => updateForm("categoryId", event.target.value)}
                                     className="w-full border rounded-lg p-3 outline-none bg-white focus:border-blue-500"
                                 >
                                     <option value="">بدون تصنيف</option>
@@ -712,7 +740,7 @@ export default function StoreManageProducts() {
                                 <textarea
                                     rows={4}
                                     value={form.images}
-                                    onChange={event => updateForm('images', event.target.value)}
+                                    onChange={event => updateForm("images", event.target.value)}
                                     placeholder="ضع رابط كل صورة في سطر منفصل"
                                     className="w-full border rounded-lg p-3 outline-none focus:border-blue-500 text-left"
                                     dir="ltr"
@@ -730,7 +758,7 @@ export default function StoreManageProducts() {
                                     className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg py-3 hover:bg-blue-700 disabled:opacity-50"
                                 >
                                     <Save size={17} />
-                                    {saving ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}
+                                    {saving ? "جارٍ الحفظ..." : "حفظ التعديلات"}
                                 </button>
 
                                 <button
